@@ -7,16 +7,13 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
-# Add this permissions block
 permissions:
-  contents: write      # This allows creating releases
-  issues: write       # Optional: if you want to create issues
-  pull-requests: write # Optional: if you want to modify PRs
+  contents: write
 
 jobs:
   build:
     runs-on: macos-latest
-    
+
     steps:
     - uses: actions/checkout@v3
 
@@ -30,64 +27,17 @@ jobs:
         python -m pip install --upgrade pip
         pip install PySide6
         pip install pyinstaller
-
-    - name: Create spec file
-      run: |
-        echo "# -*- mode: python -*-
-        block_cipher = None
-
-        a = Analysis(['main.py'],
-                    pathex=['.'],
-                    binaries=[],
-                    datas=[('main.qml', '.')],
-                    hiddenimports=['PySide6.QtQml'],
-                    hookspath=[],
-                    runtime_hooks=[],
-                    excludes=[],
-                    win_no_prefer_redirects=False,
-                    win_private_assemblies=False,
-                    cipher=block_cipher,
-                    noarchive=False)
-
-        pyz = PYZ(a.pure, a.zipped_data,
-                    cipher=block_cipher)
-
-        exe = EXE(pyz,
-                  a.scripts,
-                  [],
-                  exclude_binaries=True,
-                  name='HelloWorld',
-                  debug=False,
-                  bootloader_ignore_signals=False,
-                  strip=False,
-                  upx=True,
-                  console=False)
-
-        coll = COLLECT(exe,
-                      a.binaries,
-                      a.zipfiles,
-                      a.datas,
-                      strip=False,
-                      upx=True,
-                      upx_exclude=[],
-                      name='HelloWorld')" > HelloWorld.spec
+        brew install upx
+        brew install create-dmg
 
     - name: Build application
       run: |
-        pyinstaller HelloWorld.spec
+        pyinstaller HelloWorld.spec  # Just use the spec file directly
 
     - name: Create DMG
       run: |
-        # Install create-dmg
-        brew install create-dmg
-        
-        # Create a temporary directory for DMG contents
         mkdir dmg_contents
-        
-        # Copy the app bundle
         cp -r dist/HelloWorld dmg_contents/
-        
-        # Create the DMG
         create-dmg \
           --volname "HelloWorld" \
           --window-pos 200 120 \
@@ -99,24 +49,11 @@ jobs:
           "HelloWorld.dmg" \
           "dmg_contents/"
 
-    - name: Upload DMG artifact
-      uses: actions/upload-artifact@v3
-      with:
-        name: HelloWorld-macOS
-        path: HelloWorld.dmg
-
     - name: Create Release
-      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-      id: create_release
-      uses: softprops/action-gh-release@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        files: HelloWorld.dmg
-        tag_name: v${{ github.run_number }}
-        name: Release v${{ github.run_number }}
-        draft: false
-        prerelease: false
-        fail_on_unmatched_files: false
-        retry_count: 3
-        retry_wait_time: 10
+      run: |
+        gh release create "v${{ github.run_number }}" \
+          --title "Release v${{ github.run_number }}" \
+          --notes "Automated release" \
+          HelloWorld.dmg
