@@ -36,7 +36,7 @@ jobs:
             pathex=[],
             binaries=[],
             datas=[],
-            hiddenimports=[],
+            hiddenimports=['PySide6.QtCore', 'PySide6.QtWidgets', 'PySide6.QtGui'],
             hookspath=[],
             hooksconfig={},
             runtime_hooks=[],
@@ -66,13 +66,47 @@ jobs:
             console=False,
             disable_windowed_traceback=False,
             argv_emulation=True,
+            target_arch='universal2'
         )
         """ > HelloWorld.spec
 
     - name: Build App
       run: |
+        # Create basic Info.plist
+        echo """<?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0">
+        <dict>
+            <key>CFBundleExecutable</key>
+            <string>HelloWorld</string>
+            <key>CFBundleIconFile</key>
+            <string>icon.icns</string>
+            <key>CFBundleIdentifier</key>
+            <string>com.example.helloworld</string>
+            <key>CFBundleName</key>
+            <string>HelloWorld</string>
+            <key>CFBundlePackageType</key>
+            <string>APPL</string>
+            <key>CFBundleShortVersionString</key>
+            <string>1.0</string>
+            <key>LSMinimumSystemVersion</key>
+            <string>10.13</string>
+            <key>NSHighResolutionCapable</key>
+            <true/>
+            <key>LSArchitecturePriority</key>
+            <array>
+                <string>arm64</string>
+                <string>x86_64</string>
+            </array>
+        </dict>
+        </plist>""" > Info.plist
+
         pyinstaller HelloWorld.spec
+        
+        # Create proper app bundle structure
         mkdir -p "dist/HelloWorld.app/Contents/MacOS"
+        mkdir -p "dist/HelloWorld.app/Contents/Resources"
+        cp Info.plist "dist/HelloWorld.app/Contents/"
         mv "dist/HelloWorld" "dist/HelloWorld.app/Contents/MacOS/"
 
     - name: Create DMG
