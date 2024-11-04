@@ -167,12 +167,6 @@ jobs:
         # Mount DMG
         hdiutil attach download/HelloWorld.dmg
         
-        # Debug - Check app contents
-        echo "Contents of mounted DMG:"
-        ls -la "/Volumes/HelloWorld"
-        echo "Contents of app bundle in DMG:"
-        ls -la "/Volumes/HelloWorld/HelloWorld.app/Contents/MacOS"
-        
         # Copy to Applications
         mkdir -p ~/Applications
         cp -R "/Volumes/HelloWorld/HelloWorld.app" ~/Applications/
@@ -183,22 +177,33 @@ jobs:
         # Unmount DMG
         hdiutil detach "/Volumes/HelloWorld"
         
-        # Try to run with debug output
+        # Try running the executable directly to see error messages
+        echo "Attempting to run executable directly..."
+        cd ~/Applications/HelloWorld.app/Contents/MacOS
+        ./HelloWorld 2>&1 || true
+        
+        # Check what dynamic libraries the executable needs
+        echo "Checking dynamic library dependencies..."
+        otool -L ./HelloWorld
+        
+        # List contents of _internal directory
+        echo "Contents of _internal directory:"
+        ls -la ./_internal
+        
+        # Try to run with open and capture system log
         echo "📱 Attempting to launch app..."
         open ~/Applications/HelloWorld.app
+        sleep 2
         
-        # Wait and check process
-        sleep 5
-        ps aux | grep HelloWorld
+        # Capture recent system logs
+        echo "Recent system logs:"
+        log show --predicate 'processImagePath contains "HelloWorld"' --last 1m
         
         # Check if running
         if pgrep -f "HelloWorld" > /dev/null; then
           echo "✅ App launched successfully!"
         else
           echo "❌ App failed to launch"
-          # Print logs if available
-          echo "Application logs:"
-          cat ~/Library/Logs/DiagnosticReports/HelloWorld_*.crash || true
           exit 1
         fi
 
