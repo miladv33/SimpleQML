@@ -1,4 +1,3 @@
-# .github/workflows/macos-build.yml
 name: Build macOS DMG
 
 on:
@@ -7,6 +6,12 @@ on:
   pull_request:
     branches: [ main ]
   workflow_dispatch:
+
+# Add this permissions block
+permissions:
+  contents: write      # This allows creating releases
+  issues: write       # Optional: if you want to create issues
+  pull-requests: write # Optional: if you want to modify PRs
 
 jobs:
   build:
