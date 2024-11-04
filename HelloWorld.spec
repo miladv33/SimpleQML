@@ -2,32 +2,12 @@
 # -*- mode: python -*-
 block_cipher = None
 
-# Define which Qt modules we actually need
+# Only include the absolute minimum required Qt modules
 hiddenimports = [
     'PySide6.QtCore',
     'PySide6.QtGui',
     'PySide6.QtQml',
-    'PySide6.QtQuick'
-]
-
-# Define excludes to remove unnecessary modules
-excludes = [
-    'PySide6.QtSql',
-    'PySide6.QtNetwork',
-    'PySide6.QtTest',
-    'PySide6.QtConcurrent',
-    'PySide6.QtOpenGL',
-    'PySide6.QtOpenGLWidgets',
-    'PySide6.QtPositioning',
-    'PySide6.QtPrintSupport',
-    'PySide6.QtWebChannel',
-    'PySide6.QtWebEngineCore',
-    'PySide6.QtWebEngineQuick',
-    'PySide6.QtWebEngineWidgets',
-    'PySide6.QtWebSockets',
-    'PySide6.QtXml',
-    'PySide6.QtBluetooth',
-    'PySide6.QtMultimedia'
+    'PySide6.QtQuick',
 ]
 
 a = Analysis(
@@ -36,21 +16,19 @@ a = Analysis(
     binaries=[],
     datas=[('main.qml', '.')],
     hiddenimports=hiddenimports,
-    hookspath=[],
-    hooksconfig={},
+    excludes=['numpy', 'PIL', 'pandas', 'matplotlib', 'scipy'],
     runtime_hooks=[],
-    excludes=excludes,
-    win_no_prefer_redirects=False,
-    win_private_assemblies=False,
-    cipher=block_cipher,
-    noarchive=False,
 )
 
-# Remove unnecessary Qt plugins
-qt_plugins = ['platforms', 'styles']  # Keep only essential plugins
-for plugin in a.binaries[:]:
-    if 'Qt6' in plugin[0] and not any(p in plugin[0] for p in qt_plugins):
-        a.binaries.remove(plugin)
+# Keep only the essential Qt plugins
+binaries = []
+for binary in a.binaries:
+    if not any(exclude in binary[0] for exclude in [
+        'Qt6Network', 'Qt6Svg', 'Qt6DBus', 'Qt6VirtualKeyboard',
+        'Qt6Widgets', 'Qt6Sql', 'Qt6Test', 'Qt6WebEngine'
+    ]):
+        binaries.append(binary)
+a.binaries = binaries
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
@@ -61,15 +39,9 @@ exe = EXE(
     exclude_binaries=True,
     name='HelloWorld',
     debug=False,
-    bootloader_ignore_signals=False,
     strip=True,
     upx=True,
     console=False,
-    disable_windowed_traceback=False,
-    argv_emulation=False,
-    target_arch=None,
-    codesign_identity=None,
-    entitlements_file=None,
 )
 
 coll = COLLECT(
@@ -79,6 +51,5 @@ coll = COLLECT(
     a.datas,
     strip=True,
     upx=True,
-    upx_exclude=[],
     name='HelloWorld',
 )
