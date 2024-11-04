@@ -2,7 +2,6 @@
 # -*- mode: python -*-
 block_cipher = None
 
-# Only include the absolute minimum required Qt modules
 hiddenimports = [
     'PySide6.QtCore',
     'PySide6.QtGui',
@@ -17,10 +16,9 @@ a = Analysis(
     datas=[('main.qml', '.')],
     hiddenimports=hiddenimports,
     excludes=['numpy', 'PIL', 'pandas', 'matplotlib', 'scipy'],
-    runtime_hooks=[],
 )
 
-# Keep only the essential Qt plugins
+# Keep only essential Qt plugins
 binaries = []
 for binary in a.binaries:
     if not any(exclude in binary[0] for exclude in [
@@ -39,17 +37,25 @@ exe = EXE(
     exclude_binaries=True,
     name='HelloWorld',
     debug=False,
+    bootloader_ignore_signals=False,
     strip=True,
     upx=True,
     console=False,
+    target_arch='universal2',  # This builds for both Intel and Apple Silicon
 )
 
-coll = COLLECT(
+app = BUNDLE(
     exe,
     a.binaries,
     a.zipfiles,
     a.datas,
-    strip=True,
-    upx=True,
-    name='HelloWorld',
+    name='HelloWorld.app',
+    icon=None,  # You can add an icon file here
+    bundle_identifier='com.example.helloworld',
+    info_plist={
+        'CFBundleShortVersionString': '1.0.0',
+        'CFBundleVersion': '1.0.0',
+        'NSHighResolutionCapable': 'True',
+        'LSMinimumSystemVersion': '10.13.0',
+    }
 )

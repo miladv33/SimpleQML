@@ -27,24 +27,24 @@ jobs:
         python -m pip install --upgrade pip
         pip install PySide6
         pip install pyinstaller
-        brew install upx
         brew install create-dmg
 
     - name: Build application
       run: |
-        pyinstaller HelloWorld.spec  # Just use the spec file directly
+        pyinstaller HelloWorld.spec
 
     - name: Create DMG
       run: |
         mkdir dmg_contents
-        cp -r dist/HelloWorld dmg_contents/
+        cp -r "dist/HelloWorld.app" dmg_contents/
+        
         create-dmg \
           --volname "HelloWorld" \
           --window-pos 200 120 \
           --window-size 600 400 \
           --icon-size 100 \
-          --icon "HelloWorld" 200 190 \
-          --hide-extension "HelloWorld" \
+          --icon "HelloWorld.app" 200 190 \
+          --hide-extension "HelloWorld.app" \
           --app-drop-link 400 190 \
           "HelloWorld.dmg" \
           "dmg_contents/"
@@ -55,5 +55,5 @@ jobs:
       run: |
         gh release create "v${{ github.run_number }}" \
           --title "Release v${{ github.run_number }}" \
-          --notes "Automated release" \
+          --notes "Universal macOS build (Intel + Apple Silicon)" \
           HelloWorld.dmg
