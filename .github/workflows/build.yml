@@ -23,65 +23,27 @@ jobs:
         pip install pyinstaller
         pip install PySide6
 
-    - name: Create .spec file
+    - name: Create Bundle Script
       run: |
         echo """
-        # -*- mode: python ; coding: utf-8 -*-
+        import PyInstaller.__main__
         
-        block_cipher = None
-        
-        a = Analysis(
-            ['main.py'],
-            pathex=[],
-            binaries=[],
-            datas=[],
-            hiddenimports=[
-                'PySide6.QtCore',
-                'PySide6.QtWidgets',
-                'PySide6.QtGui',
-                'PySide6.QtDBus'
-            ],
-            hookspath=[],
-            hooksconfig={},
-            runtime_hooks=[],
-            excludes=[],
-            win_no_prefer_redirects=False,
-            win_private_assemblies=False,
-            cipher=block_cipher,
-            noarchive=False,
-        )
-        
-        pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
-        
-        exe = EXE(
-            pyz,
-            a.scripts,
-            [],
-            exclude_binaries=True,
-            name='HelloWorld',
-            debug=False,
-            bootloader_ignore_signals=False,
-            strip=False,
-            upx=True,
-            console=False,
-            disable_windowed_traceback=False,
-            argv_emulation=True,
-            target_arch='universal2',
-            codesign_identity=None,
-            entitlements_file=None,
-        )
-        
-        coll = COLLECT(
-            exe,
-            a.binaries,
-            a.zipfiles,
-            a.datas,
-            strip=False,
-            upx=True,
-            upx_exclude=[],
-            name='HelloWorld'
-        )
-        """ > HelloWorld.spec
+        PyInstaller.__main__.run([
+            '--name=HelloWorld',
+            '--windowed',
+            '--onedir',
+            '--noconfirm',
+            '--clean',
+            '--collect-binaries=PySide6',
+            '--collect-data=PySide6',
+            '--hidden-import=PySide6.QtCore',
+            '--hidden-import=PySide6.QtGui',
+            '--hidden-import=PySide6.QtWidgets',
+            '--hidden-import=PySide6.QtQml',
+            '--add-binary=/Library/Frameworks/Python.framework/Versions/3.10/Python:Python.framework/Versions/3.10/Python',
+            'main.py'
+        ])
+        """ > bundle.py
 
     - name: Create Info.plist
       run: |
@@ -117,20 +79,27 @@ jobs:
 
     - name: Build App
       run: |
-        # Build with more verbose output
-        pyinstaller --clean -y HelloWorld.spec
+        # Build using Python script
+        python bundle.py
         
-        # Create app bundle structure
-        mkdir -p "dist/HelloWorld.app/Contents/MacOS"
-        mkdir -p "dist/HelloWorld.app/Contents/Resources"
+        # Setup proper bundle structure
         mkdir -p "dist/HelloWorld.app/Contents/Frameworks"
+        mkdir -p "dist/HelloWorld.app/Contents/MacOS"
         
-        # Copy files
+        # Copy Python framework
+        cp -R /Library/Frameworks/Python.framework "dist/HelloWorld.app/Contents/Frameworks/"
+        
+        # Copy Info.plist
         cp Info.plist "dist/HelloWorld.app/Contents/"
-        cp -R "dist/HelloWorld/"* "dist/HelloWorld.app/Contents/MacOS/"
+        
+        # Copy everything from dist/HelloWorld to MacOS
+        cp -R dist/HelloWorld/* "dist/HelloWorld.app/Contents/MacOS/"
         
         # Set permissions
         chmod +x "dist/HelloWorld.app/Contents/MacOS/HelloWorld"
+        
+        # Fix framework links
+        install_name_tool -change /Library/Frameworks/Python.framework/Versions/3.10/Python @executable_path/../Frameworks/Python.framework/Versions/3.10/Python "dist/HelloWorld.app/Contents/MacOS/HelloWorld"
 
     - name: Create DMG
       run: |
@@ -155,17 +124,15 @@ jobs:
         name: HelloWorld-macOS
         path: download
 
-    - name: Debug - List files
-      run: |
-        echo "Contents of download directory:"
-        ls -la download
-        echo "Contents of app bundle:"
-        ls -la download/HelloWorld.app/Contents/MacOS || true
-
     - name: Test Installation
       run: |
         # Mount DMG
         hdiutil attach download/HelloWorld.dmg
+        
+        # Debug - Check app contents
+        echo "Checking app structure..."
+        ls -la "/Volumes/HelloWorld/HelloWorld.app/Contents/Frameworks" || true
+        ls -la "/Volumes/HelloWorld/HelloWorld.app/Contents/MacOS" || true
         
         # Copy to Applications
         mkdir -p ~/Applications
@@ -177,33 +144,22 @@ jobs:
         # Unmount DMG
         hdiutil detach "/Volumes/HelloWorld"
         
-        # Try running the executable directly to see error messages
-        echo "Attempting to run executable directly..."
-        cd ~/Applications/HelloWorld.app/Contents/MacOS
-        ./HelloWorld 2>&1 || true
-        
-        # Check what dynamic libraries the executable needs
-        echo "Checking dynamic library dependencies..."
-        otool -L ./HelloWorld
-        
-        # List contents of _internal directory
-        echo "Contents of _internal directory:"
-        ls -la ./_internal
-        
-        # Try to run with open and capture system log
+        # Try to run with debug output
         echo "📱 Attempting to launch app..."
         open ~/Applications/HelloWorld.app
-        sleep 2
         
-        # Capture recent system logs
-        echo "Recent system logs:"
-        log show --predicate 'processImagePath contains "HelloWorld"' --last 1m
+        # Wait and check process
+        sleep 5
+        ps aux | grep HelloWorld
         
         # Check if running
         if pgrep -f "HelloWorld" > /dev/null; then
           echo "✅ App launched successfully!"
         else
           echo "❌ App failed to launch"
+          # Print logs if available
+          echo "System logs:"
+          log show --predicate 'processImagePath contains "HelloWorld"' --last 1m
           exit 1
         fi
 
