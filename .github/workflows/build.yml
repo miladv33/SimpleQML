@@ -1,10 +1,9 @@
-name: Build macOS App
+name: Build and Test macOS App
 
 on:
   push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
+    tags:
+      - 'v*'  # Triggers on any tag starting with 'v'
 
 jobs:
   build:
@@ -70,17 +69,14 @@ jobs:
         )
         """ > HelloWorld.spec
 
-    - name: Build App
+    - name: Create Info.plist
       run: |
-        # Create basic Info.plist
         echo """<?xml version="1.0" encoding="UTF-8"?>
         <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
         <plist version="1.0">
         <dict>
             <key>CFBundleExecutable</key>
             <string>HelloWorld</string>
-            <key>CFBundleIconFile</key>
-            <string>icon.icns</string>
             <key>CFBundleIdentifier</key>
             <string>com.example.helloworld</string>
             <key>CFBundleName</key>
@@ -101,9 +97,9 @@ jobs:
         </dict>
         </plist>""" > Info.plist
 
+    - name: Build App
+      run: |
         pyinstaller HelloWorld.spec
-        
-        # Create proper app bundle structure
         mkdir -p "dist/HelloWorld.app/Contents/MacOS"
         mkdir -p "dist/HelloWorld.app/Contents/Resources"
         cp Info.plist "dist/HelloWorld.app/Contents/"
@@ -113,10 +109,64 @@ jobs:
       run: |
         hdiutil create -volname "HelloWorld" -srcfolder "dist/HelloWorld.app" -ov -format UDZO "dist/HelloWorld.dmg"
 
-    - name: Upload artifacts
-      uses: actions/upload-artifact@v3
+  test:
+    needs: build
+    runs-on: macos-latest
+
+    steps:
+    - name: Download built artifacts
+      uses: actions/download-artifact@v3
       with:
         name: HelloWorld-macOS
-        path: |
-          dist/HelloWorld.dmg
-          dist/HelloWorld.app
+        path: download
+
+    - name: Test Installation
+      run: |
+        # Mount the DMG
+        hdiutil attach download/HelloWorld.dmg
+        
+        # Test if the app exists
+        if [ ! -d "/Volumes/HelloWorld/HelloWorld.app" ]; then
+          echo "❌ App not found in DMG"
+          exit 1
+        fi
+        
+        # Copy to Applications
+        mkdir -p ~/Applications
+        cp -r "/Volumes/HelloWorld/HelloWorld.app" ~/Applications/
+        
+        # Unmount DMG
+        hdiutil detach "/Volumes/HelloWorld"
+        
+        # Try to run
+        echo "📱 Attempting to launch app..."
+        open ~/Applications/HelloWorld.app || {
+          echo "❌ Failed to open app"
+          exit 1
+        }
+        
+        # Check if running
+        sleep 5
+        if pgrep -f "HelloWorld" > /dev/null; then
+          echo "✅ App launched successfully!"
+        else
+          echo "❌ App failed to launch"
+          exit 1
+        fi
+
+    - name: Clean up
+      if: always()
+      run: |
+        rm -rf ~/Applications/HelloWorld.app
+
+    - name: Create Release
+      if: success()
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          download/HelloWorld.dmg
+        name: Release ${{ github.ref_name }}
+        body: |
+          HelloWorld App Release ${{ github.ref_name }}
+          - Successfully built and tested on macOS
+          - Universal binary (supports both Intel and M1 Macs)
