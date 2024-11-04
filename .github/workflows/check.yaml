@@ -1,0 +1,71 @@
+name: Test Mac Installation
+
+on:
+  push:
+    tags:
+      - 'v*'  # Triggers on any tag starting with 'v'
+
+jobs:
+  test-install:
+    runs-on: macos-latest
+
+    steps:
+    - name: Download previous artifact
+      uses: dawidd6/action-download-artifact@v2
+      with:
+        workflow: Build macOS App  # Name of your previous workflow
+        workflow_conclusion: success
+        name: HelloWorld-macOS
+        path: download
+
+    - name: Test DMG Installation
+      run: |
+        # Mount the DMG
+        hdiutil attach download/HelloWorld.dmg
+        
+        # Test if the app exists in the mounted volume
+        if [ ! -d "/Volumes/HelloWorld/HelloWorld.app" ]; then
+          echo "App not found in DMG"
+          exit 1
+        fi
+        
+        # Create Applications directory if it doesn't exist
+        mkdir -p ~/Applications
+        
+        # Copy app to Applications
+        cp -r "/Volumes/HelloWorld/HelloWorld.app" ~/Applications/
+        
+        # Unmount DMG
+        hdiutil detach "/Volumes/HelloWorld"
+        
+        # Try to run the app
+        echo "Attempting to run the app..."
+        open ~/Applications/HelloWorld.app || {
+          echo "Failed to open the app"
+          exit 1
+        }
+        
+        # Wait a few seconds to see if app launches
+        sleep 5
+        
+        # Check if process is running
+        if pgrep -f "HelloWorld" > /dev/null; then
+          echo "✅ Application launched successfully!"
+        else
+          echo "❌ Application failed to launch"
+          exit 1
+        fi
+
+    - name: Clean up
+      if: always()
+      run: |
+        rm -rf ~/Applications/HelloWorld.app
+
+    - name: Upload Test Results
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: installation-test-results
+        path: |
+          ./*.log
+          ./*.txt
