@@ -109,6 +109,15 @@ jobs:
       run: |
         hdiutil create -volname "HelloWorld" -srcfolder "dist/HelloWorld.app" -ov -format UDZO "dist/HelloWorld.dmg"
 
+    # Add this step to upload the artifacts
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: HelloWorld-macOS
+        path: |
+          dist/HelloWorld.dmg
+          dist/HelloWorld.app
+
   test:
     needs: build
     runs-on: macos-latest
@@ -119,6 +128,9 @@ jobs:
       with:
         name: HelloWorld-macOS
         path: download
+
+    - name: List downloaded files
+      run: ls -R download
 
     - name: Test Installation
       run: |
