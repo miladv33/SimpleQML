@@ -1,5 +1,8 @@
 # HelloWorld.spec
 # -*- mode: python -*-
+import sys
+from PyInstaller.utils.hooks import collect_data_files
+
 block_cipher = None
 
 hiddenimports = [
@@ -15,20 +18,19 @@ a = Analysis(
     binaries=[],
     datas=[('main.qml', '.')],
     hiddenimports=hiddenimports,
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
     excludes=['numpy', 'PIL', 'pandas', 'matplotlib', 'scipy'],
+    win_no_prefer_redirects=False,
+    win_private_assemblies=False,
+    cipher=block_cipher,
+    noarchive=False
 )
 
-# Keep only essential Qt plugins
-binaries = []
-for binary in a.binaries:
-    if not any(exclude in binary[0] for exclude in [
-        'Qt6Network', 'Qt6Svg', 'Qt6DBus', 'Qt6VirtualKeyboard',
-        'Qt6Widgets', 'Qt6Sql', 'Qt6Test', 'Qt6WebEngine'
-    ]):
-        binaries.append(binary)
-a.binaries = binaries
-
-pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+pyz = PYZ(a.pure,
+          a.zipped_data,
+          cipher=block_cipher)
 
 exe = EXE(
     pyz,
@@ -44,18 +46,33 @@ exe = EXE(
     target_arch='universal2',
 )
 
-app = BUNDLE(
+coll = COLLECT(
     exe,
     a.binaries,
     a.zipfiles,
     a.datas,
-    name='HelloWorld.app',
-    icon=None,  # Explicitly set to None
-    bundle_identifier='com.example.helloworld',
-    info_plist={
-        'CFBundleShortVersionString': '1.0.0',
-        'CFBundleVersion': '1.0.0',
-        'NSHighResolutionCapable': 'True',
-        'LSMinimumSystemVersion': '10.13.0',
-    }
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    name='HelloWorld'
 )
+
+if sys.platform == 'darwin':
+    app = BUNDLE(
+        coll,
+        name='HelloWorld.app',
+        icon=None,
+        bundle_identifier='com.example.helloworld',
+        version='1.0.0',
+        info_plist={
+            'NSHighResolutionCapable': 'True',
+            'NSRequiresAquaSystemAppearance': 'No',
+            'LSMinimumSystemVersion': '10.13.0',
+            'CFBundleDisplayName': 'HelloWorld',
+            'CFBundleIdentifier': 'com.example.helloworld',
+            'CFBundleVersion': '1.0.0',
+            'CFBundleShortVersionString': '1.0.0',
+            'NSPrincipalClass': 'NSApplication',
+            'LSApplicationCategoryType': 'public.app-category.utilities',
+        }
+    )
