@@ -65,25 +65,15 @@ jobs:
             runtime_tmpdir=None,
             console=False,
             disable_windowed_traceback=False,
-            argv_emulation=True,  # Changed to True for better macOS support
-            target_arch=None,
-            codesign_identity=None,
-            entitlements_file=None,
-        )
-        
-        app = BUNDLE(
-            exe,
-            name='HelloWorld.app',
-            icon=None,  # Explicitly set to None to avoid icon-related errors
-            bundle_identifier='com.example.helloworld',
-            info_plist={
-                'NSHighResolutionCapable': 'True'
-            },
+            argv_emulation=True,
         )
         """ > HelloWorld.spec
 
     - name: Build App
-      run: pyinstaller HelloWorld.spec
+      run: |
+        pyinstaller HelloWorld.spec
+        mkdir -p "dist/HelloWorld.app/Contents/MacOS"
+        mv "dist/HelloWorld" "dist/HelloWorld.app/Contents/MacOS/"
 
     - name: Create DMG
       run: |
