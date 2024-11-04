@@ -3,7 +3,7 @@ name: Build and Test macOS App
 on:
   push:
     tags:
-      - 'v*'  # Triggers on any tag starting with 'v'
+      - 'v*'
 
 jobs:
   build:
@@ -35,11 +35,16 @@ jobs:
             pathex=[],
             binaries=[],
             datas=[],
-            hiddenimports=['PySide6.QtCore', 'PySide6.QtWidgets', 'PySide6.QtGui'],
+            hiddenimports=[
+                'PySide6.QtCore',
+                'PySide6.QtWidgets',
+                'PySide6.QtGui',
+                'PySide6.QtDBus'
+            ],
             hookspath=[],
             hooksconfig={},
             runtime_hooks=[],
-            excludes=['matplotlib', 'numpy', 'PIL'],
+            excludes=[],
             win_no_prefer_redirects=False,
             win_private_assemblies=False,
             cipher=block_cipher,
@@ -51,21 +56,30 @@ jobs:
         exe = EXE(
             pyz,
             a.scripts,
-            a.binaries,
-            a.zipfiles,
-            a.datas,
             [],
+            exclude_binaries=True,
             name='HelloWorld',
             debug=False,
             bootloader_ignore_signals=False,
             strip=False,
             upx=True,
-            upx_exclude=[],
-            runtime_tmpdir=None,
             console=False,
             disable_windowed_traceback=False,
             argv_emulation=True,
-            target_arch='universal2'
+            target_arch='universal2',
+            codesign_identity=None,
+            entitlements_file=None,
+        )
+        
+        coll = COLLECT(
+            exe,
+            a.binaries,
+            a.zipfiles,
+            a.datas,
+            strip=False,
+            upx=True,
+            upx_exclude=[],
+            name='HelloWorld'
         )
         """ > HelloWorld.spec
 
@@ -89,6 +103,10 @@ jobs:
             <string>10.13</string>
             <key>NSHighResolutionCapable</key>
             <true/>
+            <key>CFBundleSupportedPlatforms</key>
+            <array>
+                <string>MacOSX</string>
+            </array>
             <key>LSArchitecturePriority</key>
             <array>
                 <string>arm64</string>
@@ -99,17 +117,25 @@ jobs:
 
     - name: Build App
       run: |
-        pyinstaller HelloWorld.spec
+        # Build with more verbose output
+        pyinstaller --clean -y HelloWorld.spec
+        
+        # Create app bundle structure
         mkdir -p "dist/HelloWorld.app/Contents/MacOS"
         mkdir -p "dist/HelloWorld.app/Contents/Resources"
+        mkdir -p "dist/HelloWorld.app/Contents/Frameworks"
+        
+        # Copy files
         cp Info.plist "dist/HelloWorld.app/Contents/"
-        mv "dist/HelloWorld" "dist/HelloWorld.app/Contents/MacOS/"
+        cp -R "dist/HelloWorld/"* "dist/HelloWorld.app/Contents/MacOS/"
+        
+        # Set permissions
+        chmod +x "dist/HelloWorld.app/Contents/MacOS/HelloWorld"
 
     - name: Create DMG
       run: |
         hdiutil create -volname "HelloWorld" -srcfolder "dist/HelloWorld.app" -ov -format UDZO "dist/HelloWorld.dmg"
 
-    # Add this step to upload the artifacts
     - name: Upload artifacts
       uses: actions/upload-artifact@v3
       with:
@@ -129,56 +155,59 @@ jobs:
         name: HelloWorld-macOS
         path: download
 
-    - name: List downloaded files
-      run: ls -R download
+    - name: Debug - List files
+      run: |
+        echo "Contents of download directory:"
+        ls -la download
+        echo "Contents of app bundle:"
+        ls -la download/HelloWorld.app/Contents/MacOS || true
 
     - name: Test Installation
       run: |
-        # Mount the DMG
+        # Mount DMG
         hdiutil attach download/HelloWorld.dmg
         
-        # Test if the app exists
-        if [ ! -d "/Volumes/HelloWorld/HelloWorld.app" ]; then
-          echo "❌ App not found in DMG"
-          exit 1
-        fi
+        # Debug - Check app contents
+        echo "Contents of mounted DMG:"
+        ls -la "/Volumes/HelloWorld"
+        echo "Contents of app bundle in DMG:"
+        ls -la "/Volumes/HelloWorld/HelloWorld.app/Contents/MacOS"
         
         # Copy to Applications
         mkdir -p ~/Applications
-        cp -r "/Volumes/HelloWorld/HelloWorld.app" ~/Applications/
+        cp -R "/Volumes/HelloWorld/HelloWorld.app" ~/Applications/
+        
+        # Set permissions
+        chmod +x ~/Applications/HelloWorld.app/Contents/MacOS/HelloWorld
         
         # Unmount DMG
         hdiutil detach "/Volumes/HelloWorld"
         
-        # Try to run
+        # Try to run with debug output
         echo "📱 Attempting to launch app..."
-        open ~/Applications/HelloWorld.app || {
-          echo "❌ Failed to open app"
-          exit 1
-        }
+        open ~/Applications/HelloWorld.app
+        
+        # Wait and check process
+        sleep 5
+        ps aux | grep HelloWorld
         
         # Check if running
-        sleep 5
         if pgrep -f "HelloWorld" > /dev/null; then
           echo "✅ App launched successfully!"
         else
           echo "❌ App failed to launch"
+          # Print logs if available
+          echo "Application logs:"
+          cat ~/Library/Logs/DiagnosticReports/HelloWorld_*.crash || true
           exit 1
         fi
-
-    - name: Clean up
-      if: always()
-      run: |
-        rm -rf ~/Applications/HelloWorld.app
 
     - name: Create Release
       if: success()
       uses: softprops/action-gh-release@v1
       with:
-        files: |
-          download/HelloWorld.dmg
+        files: download/HelloWorld.dmg
         name: Release ${{ github.ref_name }}
         body: |
           HelloWorld App Release ${{ github.ref_name }}
-          - Successfully built and tested on macOS
           - Universal binary (supports both Intel and M1 Macs)
