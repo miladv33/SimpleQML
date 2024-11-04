@@ -41,7 +41,7 @@ exe = EXE(
     strip=True,
     upx=True,
     console=False,
-    target_arch='universal2',  # This builds for both Intel and Apple Silicon
+    target_arch='universal2',
 )
 
 app = BUNDLE(
@@ -50,7 +50,7 @@ app = BUNDLE(
     a.zipfiles,
     a.datas,
     name='HelloWorld.app',
-    icon=None,  # You can add an icon file here
+    icon=None,  # Explicitly set to None
     bundle_identifier='com.example.helloworld',
     info_plist={
         'CFBundleShortVersionString': '1.0.0',

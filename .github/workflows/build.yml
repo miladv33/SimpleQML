@@ -29,6 +29,26 @@ jobs:
         pip install pyinstaller
         brew install create-dmg
 
+    - name: Create Icon # Add this step to create a basic icon
+      run: |
+        # Create a temporary icon using Imagemagick
+        brew install imagemagick
+        convert -size 1024x1024 xc:transparent \
+          -draw "circle 512,512 512,0" \
+          -fill blue app.png
+        
+        # Create iconset directory
+        mkdir app.iconset
+        
+        # Generate different sizes
+        for size in 16 32 64 128 256 512; do
+          convert app.png -resize ${size}x${size} app.iconset/icon_${size}x${size}.png
+          convert app.png -resize $((size*2))x$((size*2)) app.iconset/icon_${size}x${size}@2x.png
+        done
+        
+        # Create icns file
+        iconutil -c icns app.iconset
+
     - name: Build application
       run: |
         pyinstaller HelloWorld.spec
