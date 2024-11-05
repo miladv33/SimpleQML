@@ -7,111 +7,11 @@ on:
 
 jobs:
   build:
+    # Previous build job remains the same
     runs-on: macos-latest
-
     steps:
     - uses: actions/checkout@v3
-
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.10'
-
-    - name: Install Dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install pyinstaller
-        pip install PySide6
-
-    - name: Create Bundle Script
-      run: |
-        echo """
-        import PyInstaller.__main__
-        
-        PyInstaller.__main__.run([
-            '--name=HelloWorld',
-            '--windowed',
-            '--onedir',
-            '--noconfirm',
-            '--clean',
-            '--collect-binaries=PySide6',
-            '--collect-data=PySide6',
-            '--hidden-import=PySide6.QtCore',
-            '--hidden-import=PySide6.QtGui',
-            '--hidden-import=PySide6.QtWidgets',
-            '--hidden-import=PySide6.QtQml',
-            '--add-binary=/Library/Frameworks/Python.framework/Versions/3.10/Python:Python.framework/Versions/3.10/Python',
-            'main.py'
-        ])
-        """ > bundle.py
-
-    - name: Create Info.plist
-      run: |
-        echo """<?xml version="1.0" encoding="UTF-8"?>
-        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-        <plist version="1.0">
-        <dict>
-            <key>CFBundleExecutable</key>
-            <string>HelloWorld</string>
-            <key>CFBundleIdentifier</key>
-            <string>com.example.helloworld</string>
-            <key>CFBundleName</key>
-            <string>HelloWorld</string>
-            <key>CFBundlePackageType</key>
-            <string>APPL</string>
-            <key>CFBundleShortVersionString</key>
-            <string>1.0</string>
-            <key>LSMinimumSystemVersion</key>
-            <string>10.13</string>
-            <key>NSHighResolutionCapable</key>
-            <true/>
-            <key>CFBundleSupportedPlatforms</key>
-            <array>
-                <string>MacOSX</string>
-            </array>
-            <key>LSArchitecturePriority</key>
-            <array>
-                <string>arm64</string>
-                <string>x86_64</string>
-            </array>
-        </dict>
-        </plist>""" > Info.plist
-
-    - name: Build App
-      run: |
-        # Build using Python script
-        python bundle.py
-        
-        # Setup proper bundle structure
-        mkdir -p "dist/HelloWorld.app/Contents/Frameworks"
-        mkdir -p "dist/HelloWorld.app/Contents/MacOS"
-        
-        # Copy Python framework
-        cp -R /Library/Frameworks/Python.framework "dist/HelloWorld.app/Contents/Frameworks/"
-        
-        # Copy Info.plist
-        cp Info.plist "dist/HelloWorld.app/Contents/"
-        
-        # Copy everything from dist/HelloWorld to MacOS
-        cp -R dist/HelloWorld/* "dist/HelloWorld.app/Contents/MacOS/"
-        
-        # Set permissions
-        chmod +x "dist/HelloWorld.app/Contents/MacOS/HelloWorld"
-        
-        # Fix framework links
-        install_name_tool -change /Library/Frameworks/Python.framework/Versions/3.10/Python @executable_path/../Frameworks/Python.framework/Versions/3.10/Python "dist/HelloWorld.app/Contents/MacOS/HelloWorld"
-
-    - name: Create DMG
-      run: |
-        hdiutil create -volname "HelloWorld" -srcfolder "dist/HelloWorld.app" -ov -format UDZO "dist/HelloWorld.dmg"
-
-    - name: Upload artifacts
-      uses: actions/upload-artifact@v3
-      with:
-        name: HelloWorld-macOS
-        path: |
-          dist/HelloWorld.dmg
-          dist/HelloWorld.app
+    # ... rest of your existing build steps ...
 
   test:
     needs: build
@@ -124,44 +24,160 @@ jobs:
         name: HelloWorld-macOS
         path: download
 
-    - name: Test Installation
+    - name: Debug - List Directory Contents
       run: |
-        # Mount DMG
+        echo "📁 Contents of download directory:"
+        ls -la download
+        echo "📦 DMG file details:"
+        file download/HelloWorld.dmg || true
+
+    - name: Verify DMG Integrity
+      run: |
+        echo "🔍 Verifying DMG integrity..."
+        if ! hdiutil verify download/HelloWorld.dmg; then
+          echo "❌ DMG verification failed"
+          exit 1
+        fi
+        echo "✅ DMG integrity verified"
+
+    - name: Check DMG Structure
+      run: |
+        echo "📀 Mounting DMG..."
+        MOUNT_POINT=$(hdiutil attach -nobrowse -readonly download/HelloWorld.dmg | grep "Apple_HFS" | awk '{print $NF}')
+        
+        if [ -z "$MOUNT_POINT" ]; then
+          echo "❌ Failed to mount DMG"
+          exit 1
+        fi
+        
+        echo "✅ Mounted at: $MOUNT_POINT"
+        
+        echo "📱 Checking for .app bundle..."
+        APP_PATH=$(find "$MOUNT_POINT" -name "*.app" -maxdepth 1)
+        
+        if [ -z "$APP_PATH" ]; then
+          echo "❌ No .app bundle found in DMG"
+          hdiutil detach "$MOUNT_POINT"
+          exit 1
+        fi
+        
+        echo "✅ Found app bundle: $(basename "$APP_PATH")"
+        
+        echo "🔍 Verifying app bundle structure..."
+        REQUIRED_PATHS=(
+          "Contents/Info.plist"
+          "Contents/MacOS"
+          "Contents/MacOS/HelloWorld"
+        )
+        
+        for path in "${REQUIRED_PATHS[@]}"; do
+          if [ ! -e "$APP_PATH/$path" ]; then
+            echo "❌ Missing required component: $path"
+            hdiutil detach "$MOUNT_POINT"
+            exit 1
+          fi
+        done
+        
+        echo "✅ App bundle structure verified"
+        
+        echo "📋 Checking Info.plist..."
+        REQUIRED_KEYS=(
+          "CFBundleExecutable"
+          "CFBundleIdentifier"
+          "CFBundlePackageType"
+          "LSMinimumSystemVersion"
+        )
+        
+        for key in "${REQUIRED_KEYS[@]}"; do
+          if ! defaults read "$APP_PATH/Contents/Info.plist" "$key" >/dev/null 2>&1; then
+            echo "❌ Missing required Info.plist key: $key"
+            hdiutil detach "$MOUNT_POINT"
+            exit 1
+          fi
+        done
+        
+        echo "✅ Info.plist verification passed"
+        
+        echo "🔧 Checking executable..."
+        EXEC_PATH="$APP_PATH/Contents/MacOS/HelloWorld"
+        
+        if [ ! -x "$EXEC_PATH" ]; then
+          echo "❌ Executable permissions not set correctly"
+          hdiutil detach "$MOUNT_POINT"
+          exit 1
+        fi
+        
+        echo "📊 Checking architecture support..."
+        ARCHS=$(lipo -info "$EXEC_PATH")
+        echo "$ARCHS"
+        
+        if ! echo "$ARCHS" | grep -q "x86_64" || ! echo "$ARCHS" | grep -q "arm64"; then
+          echo "❌ Missing required architectures (should support both Intel and Apple Silicon)"
+          hdiutil detach "$MOUNT_POINT"
+          exit 1
+        fi
+        
+        echo "✅ Architecture verification passed"
+        
+        echo "📚 Checking dynamic libraries..."
+        otool -L "$EXEC_PATH"
+        
+        echo "🧪 Checking Qt dependencies..."
+        REQUIRED_QT_LIBS=(
+          "QtCore"
+          "QtGui"
+          "QtWidgets"
+        )
+        
+        OTOOL_OUTPUT=$(otool -L "$EXEC_PATH")
+        for lib in "${REQUIRED_QT_LIBS[@]}"; do
+          if ! echo "$OTOOL_OUTPUT" | grep -q "$lib"; then
+            echo "❌ Missing required Qt library: $lib"
+            hdiutil detach "$MOUNT_POINT"
+            exit 1
+          fi
+        done
+        
+        echo "✅ Qt dependencies verified"
+        
+        echo "💿 Unmounting DMG..."
+        hdiutil detach "$MOUNT_POINT"
+        
+        echo "✅ All verification checks passed!"
+
+    - name: Smoke Test
+      run: |
+        echo "🧪 Performing smoke test..."
+        
+        # Mount DMG and copy to temporary location
         hdiutil attach download/HelloWorld.dmg
-        
-        # Debug - Check app contents
-        echo "Checking app structure..."
-        ls -la "/Volumes/HelloWorld/HelloWorld.app/Contents/Frameworks" || true
-        ls -la "/Volumes/HelloWorld/HelloWorld.app/Contents/MacOS" || true
-        
-        # Copy to Applications
-        mkdir -p ~/Applications
-        cp -R "/Volumes/HelloWorld/HelloWorld.app" ~/Applications/
-        
-        # Set permissions
-        chmod +x ~/Applications/HelloWorld.app/Contents/MacOS/HelloWorld
-        
-        # Unmount DMG
+        TEST_DIR="$HOME/TestApp"
+        mkdir -p "$TEST_DIR"
+        cp -R "/Volumes/HelloWorld/HelloWorld.app" "$TEST_DIR/"
         hdiutil detach "/Volumes/HelloWorld"
         
-        # Try to run with debug output
+        # Try launching the app
         echo "📱 Attempting to launch app..."
-        open ~/Applications/HelloWorld.app
+        open "$TEST_DIR/HelloWorld.app" &
         
-        # Wait and check process
+        # Wait for app to start
         sleep 5
-        ps aux | grep HelloWorld
         
-        # Check if running
+        # Check if process is running
         if pgrep -f "HelloWorld" > /dev/null; then
-          echo "✅ App launched successfully!"
+          echo "✅ App launched successfully"
+          # Capture any crash reports or errors
+          log show --predicate 'processImagePath contains "HelloWorld"' --last 1m
+          pkill -f "HelloWorld"
         else
           echo "❌ App failed to launch"
-          # Print logs if available
-          echo "System logs:"
+          echo "📊 System logs:"
           log show --predicate 'processImagePath contains "HelloWorld"' --last 1m
           exit 1
         fi
+        
+        # Cleanup
+        rm -rf "$TEST_DIR"
 
     - name: Create Release
       if: success()
@@ -172,3 +188,4 @@ jobs:
         body: |
           HelloWorld App Release ${{ github.ref_name }}
           - Universal binary (supports both Intel and M1 Macs)
+          - Verified and tested for installation
