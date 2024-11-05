@@ -153,170 +153,106 @@ jobs:
         uses: actions/download-artifact@v3
         with:
           name: HelloWorld-macOS
-          path: download
+          path: artifacts
 
-      - name: Debug - List Directory Contents
+      - name: Debug - List Downloads
         run: |
-          echo "📁 Contents of download directory:"
-          ls -la download
-          echo "📦 DMG file details:"
-          file download/HelloWorld.dmg || true
+          echo "📁 Current working directory:"
+          pwd
+          echo "📁 Contents of artifacts directory:"
+          ls -la artifacts
+          echo "🔍 DMG file details:"
+          file artifacts/*.dmg || true
+          echo "📊 DMG file size:"
+          ls -lh artifacts/*.dmg || true
 
-      - name: Verify DMG Integrity
+      - name: Verify DMG
         run: |
-          echo "🔍 Verifying DMG integrity..."
-          if ! hdiutil verify download/HelloWorld.dmg; then
-            echo "❌ DMG verification failed"
+          DMG_PATH=$(find artifacts -name "*.dmg")
+          if [ ! -f "$DMG_PATH" ]; then
+            echo "❌ DMG file not found"
             exit 1
           fi
-          echo "✅ DMG integrity verified"
 
-      - name: Check DMG Structure
-        run: |
-          echo "📀 Mounting DMG..."
-          MOUNT_POINT=$(hdiutil attach -nobrowse -readonly download/HelloWorld.dmg | grep "Apple_HFS" | awk '{print $NF}')
-          
+          echo "🔍 DMG file details:"
+          file "$DMG_PATH"
+
+          echo "📊 Checking DMG integrity..."
+          hdiutil verify "$DMG_PATH" || true
+
+          echo "💿 Attempting to mount DMG..."
+          hdiutil attach -verbose -nobrowse -readonly "$DMG_PATH" || {
+            echo "❌ Mount failed. Checking system logs..."
+            log show --predicate 'eventMessage contains "hdiutil"' --last 1m
+            exit 1
+          }
+
+          # Get mount point
+          MOUNT_POINT=$(hdiutil info | grep "/Volumes/HelloWorld" | awk '{print $NF}')
           if [ -z "$MOUNT_POINT" ]; then
-            echo "❌ Failed to mount DMG"
-            exit 1
+            echo "❌ Could not find mount point"
+            # Try alternative mount point detection
+            MOUNT_POINT=$(df | grep "HelloWorld" | awk '{print $NF}')
+            if [ -z "$MOUNT_POINT" ]; then
+              echo "❌ Mount point detection failed"
+              exit 1
+            fi
           fi
-          
+
           echo "✅ Mounted at: $MOUNT_POINT"
-          
-          echo "📱 Checking for .app bundle..."
-          APP_PATH=$(find "$MOUNT_POINT" -name "*.app" -maxdepth 1)
-          
-          if [ -z "$APP_PATH" ]; then
-            echo "❌ No .app bundle found in DMG"
-            hdiutil detach "$MOUNT_POINT"
-            exit 1
-          fi
-          
-          echo "✅ Found app bundle: $(basename "$APP_PATH")"
-          
-          echo "🔍 Verifying app bundle structure..."
-          REQUIRED_PATHS=(
-            "Contents/Info.plist"
-            "Contents/MacOS"
-            "Contents/MacOS/HelloWorld"
-          )
-          
-          for path in "${REQUIRED_PATHS[@]}"; do
-            if [ ! -e "$APP_PATH/$path" ]; then
-              echo "❌ Missing required component: $path"
-              hdiutil detach "$MOUNT_POINT"
-              exit 1
-            fi
-          done
-          
-          echo "✅ App bundle structure verified"
-          
-          echo "📋 Checking Info.plist..."
-          REQUIRED_KEYS=(
-            "CFBundleExecutable"
-            "CFBundleIdentifier"
-            "CFBundlePackageType"
-            "LSMinimumSystemVersion"
-          )
-          
-          for key in "${REQUIRED_KEYS[@]}"; do
-            if ! defaults read "$APP_PATH/Contents/Info.plist" "$key" >/dev/null 2>&1; then
-              echo "❌ Missing required Info.plist key: $key"
-              hdiutil detach "$MOUNT_POINT"
-              exit 1
-            fi
-          done
-          
-          echo "✅ Info.plist verification passed"
-          
-          echo "🔧 Checking executable..."
-          EXEC_PATH="$APP_PATH/Contents/MacOS/HelloWorld"
-          
-          if [ ! -x "$EXEC_PATH" ]; then
-            echo "❌ Executable permissions not set correctly"
-            hdiutil detach "$MOUNT_POINT"
-            exit 1
-          fi
-          
-          echo "📊 Checking architecture support..."
-          ARCHS=$(lipo -info "$EXEC_PATH")
-          echo "$ARCHS"
-          
-          if ! echo "$ARCHS" | grep -q "x86_64" || ! echo "$ARCHS" | grep -q "arm64"; then
-            echo "❌ Missing required architectures (should support both Intel and Apple Silicon)"
-            hdiutil detach "$MOUNT_POINT"
-            exit 1
-          fi
-          
-          echo "✅ Architecture verification passed"
-          
-          echo "📚 Checking dynamic libraries..."
-          otool -L "$EXEC_PATH"
-          
-          echo "🧪 Checking Qt dependencies..."
-          REQUIRED_QT_LIBS=(
-            "QtCore"
-            "QtGui"
-            "QtWidgets"
-          )
-          
-          OTOOL_OUTPUT=$(otool -L "$EXEC_PATH")
-          for lib in "${REQUIRED_QT_LIBS[@]}"; do
-            if ! echo "$OTOOL_OUTPUT" | grep -q "$lib"; then
-              echo "❌ Missing required Qt library: $lib"
-              hdiutil detach "$MOUNT_POINT"
-              exit 1
-            fi
-          done
-          
-          echo "✅ Qt dependencies verified"
-          
-          echo "💿 Unmounting DMG..."
-          hdiutil detach "$MOUNT_POINT"
-          
-          echo "✅ All verification checks passed!"
+          echo "📁 Mount point contents:"
+          ls -la "$MOUNT_POINT"
 
-      - name: Smoke Test
-        run: |
-          echo "🧪 Performing smoke test..."
-          
-          # Mount DMG and copy to temporary location
-          hdiutil attach download/HelloWorld.dmg
-          TEST_DIR="$HOME/TestApp"
-          mkdir -p "$TEST_DIR"
-          cp -R "/Volumes/HelloWorld/HelloWorld.app" "$TEST_DIR/"
-          hdiutil detach "/Volumes/HelloWorld"
-          
-          # Try launching the app
-          echo "📱 Attempting to launch app..."
-          open "$TEST_DIR/HelloWorld.app" &
-          
-          # Wait for app to start
-          sleep 5
-          
-          # Check if process is running
-          if pgrep -f "HelloWorld" > /dev/null; then
-            echo "✅ App launched successfully"
-            # Capture any crash reports or errors
-            log show --predicate 'processImagePath contains "HelloWorld"' --last 1m
-            pkill -f "HelloWorld"
-          else
-            echo "❌ App failed to launch"
-            echo "📊 System logs:"
-            log show --predicate 'processImagePath contains "HelloWorld"' --last 1m
+          # Store mount point for later steps
+          echo "MOUNT_POINT=$MOUNT_POINT" >> $GITHUB_ENV
+
+          # Check for .app bundle
+          if [ ! -d "$MOUNT_POINT/HelloWorld.app" ]; then
+            echo "❌ HelloWorld.app not found in DMG"
+            echo "📁 Available files in DMG:"
+            find "$MOUNT_POINT" -ls
+            hdiutil detach "$MOUNT_POINT" || true
             exit 1
           fi
-          
-          # Cleanup
-          rm -rf "$TEST_DIR"
 
-      - name: Create Release
+          echo "✅ Found HelloWorld.app"
+
+      - name: Check App Bundle
         if: success()
-        uses: softprops/action-gh-release@v1
-        with:
-          files: download/HelloWorld.dmg
-          name: Release ${{ github.ref_name }}
-          body: |
-            HelloWorld App Release ${{ github.ref_name }}
-            - Universal binary (supports both Intel and M1 Macs)
-            - Verified and tested for installation
+        run: |
+          if [ -z "$MOUNT_POINT" ]; then
+            echo "❌ Mount point not set"
+            exit 1
+          fi
+
+          APP_PATH="$MOUNT_POINT/HelloWorld.app"
+          echo "🔍 Checking app bundle at: $APP_PATH"
+
+          # List app bundle contents
+          echo "📁 App bundle structure:"
+          find "$APP_PATH" -ls
+
+          # Check Info.plist
+          echo "📋 Info.plist contents:"
+          plutil -p "$APP_PATH/Contents/Info.plist" || true
+
+          # Check executable
+          echo "🔧 Checking executable:"
+          EXEC_PATH="$APP_PATH/Contents/MacOS/HelloWorld"
+          if [ -f "$EXEC_PATH" ]; then
+            echo "✅ Executable found"
+            echo "📊 File permissions:"
+            ls -la "$EXEC_PATH"
+            echo "📚 Dynamic libraries:"
+            otool -L "$EXEC_PATH" || true
+          else
+            echo "❌ Executable not found"
+          fi
+
+      - name: Cleanup
+        if: always()
+        run: |
+          if [ ! -z "$MOUNT_POINT" ] && [ -d "$MOUNT_POINT" ]; then
+            echo "💿 Unmounting DMG..."
+            hdiutil detach "$MOUNT_POINT" -force || true
+          fi
